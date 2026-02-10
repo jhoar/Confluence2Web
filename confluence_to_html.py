@@ -21,7 +21,7 @@ PAGE_BATCH_SIZE = 100
 class PageNode:
     page_id: str
     title: str
-    body_storage: str
+    body_html: str
     parent_id: Optional[str]
     ancestors: List[str]
     children: List["PageNode"] = field(default_factory=list)
@@ -108,7 +108,7 @@ def fetch_all_pages(confluence: Confluence, space_key: str) -> List[dict]:
             space=space_key,
             start=start,
             limit=PAGE_BATCH_SIZE,
-            expand="body.storage,ancestors",
+            expand="body.export_view,body.view,body.storage,ancestors",
             content_type="page",
         )
 
@@ -132,16 +132,12 @@ def build_tree(pages: List[dict]) -> tuple[Dict[str, PageNode], List[PageNode]]:
         ancestors = [str(item.get("id")) for item in page.get("ancestors", []) if item.get("id")]
         parent_id = ancestors[-1] if ancestors else None
         title = page.get("title", f"Untitled-{page_id}")
-        body_storage = (
-            page.get("body", {})
-            .get("storage", {})
-            .get("value", f"<p>Page body unavailable for {html.escape(title)}.</p>")
-        )
+        body_html = extract_body_html(page, title)
 
         nodes[page_id] = PageNode(
             page_id=page_id,
             title=title,
-            body_storage=body_storage,
+            body_html=body_html,
             parent_id=parent_id,
             ancestors=ancestors,
         )
@@ -156,6 +152,15 @@ def build_tree(pages: List[dict]) -> tuple[Dict[str, PageNode], List[PageNode]]:
 
     sort_tree(roots)
     return nodes, roots
+
+
+def extract_body_html(page: dict, title: str) -> str:
+    body = page.get("body", {})
+    for fmt in ("export_view", "view", "storage"):
+        value = body.get(fmt, {}).get("value")
+        if value:
+            return value
+    return f"<p>Page body unavailable for {html.escape(title)}.</p>"
 
 
 def sort_tree(nodes: List[PageNode]) -> None:
@@ -279,7 +284,7 @@ def page_template(
         {render_nav_button('Next', next_link)}
       </nav>
       <article>
-        {node.body_storage}
+        {node.body_html}
       </article>
     </main>
   </div>
